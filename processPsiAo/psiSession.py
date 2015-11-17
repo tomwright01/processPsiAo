@@ -1,6 +1,8 @@
 import os
 import logging
 import glob
+import re
+import csv
 
 logger = logging.getLogger(__name__)
 
@@ -34,13 +36,13 @@ def getRecordings(srcFolder,type='SLO'):
 def getImagingFileInfo(srcDir, file):
     """Extracts the imaging info from the TSLO_info and SLO_info files
     file should be a dict object with fields {timestamp,eye,index}"""
-    reTslo = {'fix_x': re.compile('x pos \[deg\].s*(\d.\d+)'),
-              'fix_y': re.compile('y pos \[deg\]\s*(\d.\d+)')}
+    reTslo = {'fix_x': re.compile('x pos \[deg\]\s*([-]?\d+.\d+)'),
+              'fix_y': re.compile('y pos \[deg\]\s*([-]?\d+.\d+)')}
     
-    reSlo = {'scanSize_x': re.compile('H size \[deg\]\s*(\d+.\d+)'),
-             'scanSize_y': re.compile('V size \[deg\]\s*(\d+.\d+)'),
-             'scanPos_x': re.compile('H offset \[deg\]\s*(\d+.\d+)'),
-             'scanPos_y': re.complie('V offset \[deg\]\s*(\d+.\d+)')}    
+    reSlo = {'scanSize_x': re.compile('H size \[deg\]\s*([-]?\d+.\d+)'),
+             'scanSize_y': re.compile('V size \[deg\]\s*([-]?\d+.\d+)'),
+             'scanPos_x': re.compile('H offset \[deg\]\s*([-]?\d+.\d+)'),
+             'scanPos_y': re.compile('V offset \[deg\]\s*([-]?\d+.\d+)')}    
     
     sloInfoPath = 'SLO_info__{}_{}_{}.txt'.format(file['eye'],
                                                   file['index'],
@@ -64,51 +66,60 @@ def getImagingFileInfo(srcDir, file):
         return
     
     output = {}
-
-    
     for line in tsloFile:
         for key,expr in reTslo.items():
             match = re.search(expr,line)
-        if match:
-            output[key] = float(match.group(1))
+            if match:
+                output[key] = float(match.group(1))
     tsloFile.close()
 
     for line in sloFile:
         for key,expr in reSlo.items():
             match = re.search(expr,line)
-        if match:
-            output[key] = float(match.group(1))
+            if match:
+                output[key] = float(match.group(1))
     sloFile.close()
     
     #flatten the keys
     idx = [item for keys in [reTslo.keys(),reSlo.keys()] for item in keys]
     for key in idx:
-        if not output[key]:
-            logger.warning('Value not found for {} in file {}').format(key,sloInfoPath)
+        if key not in output.keys():
+            logger.warning('Value not found for {} in file {}'.format(key,sloInfoPath))
             
-    # TODO: convert to retinal coordinates here
+    #invert the scan location x and y coordinates, they are wrong in the info files
+    output['scanPos_x'], output['scanPos_y'] = output['scanPos_y'], output['scanPos_x']
+    # convert to retinal coordinates here
+    output['ret_x'] = output['fix_x'] + output['scanPos_x']
+    output['ret_y'] = output['fix_y'] + (0 - output['scanPos_y'])
+    if output['ret_x'] > 0:
+        output['hemi_x'] = 'T'
+    elif output['ret_x'] < 0:
+        output['hemi_x'] = 'N'
+    else:
+        output['hemi_x'] = None
+        
+    if output['ret_y'] > 0:
+        output['hemi_y'] = 'S'
+    elif output['ret_y'] < 0:
+        output['hemi_y'] = 'I'
+    else:
+        output['hemi_x'] = None
+        
     return output
 
-def getImageingSessionInfo(srcFolder,recType,outFile=None,append=False):
+def getImagingSessionInfo(srcFolder,recType='SLO'):
     """Process the data from an imaging session,
     write the scan locations to a file if requested"""
     if recType not in ['SLO']:
         logger.error('Processing recordings of type:{} not supported.'.format(recType))
-    if outfile:
-        try:
-            if append:
-                outfile = open(outFile,'w+')
-            else:
-                outfile = open(outFile,'w')
-        except IOError:
-            logger.error('Could not open file:{} for writing'.format(outfile))
-            
-    if not append:
-        f.write('Filename,Type,Timestamp,Eye,Index,ScanSizeX,ScanSizeY,XPos,YPos')
+        return
     
     recordings = getRecordings(srcFolder, type=recType)
+    recordingCoords = []
     for recording in recordings:
         coordinates = getImagingFileInfo(srcFolder, recording)
-        
-    
-        
+        coordinates['filename'] = recording['filename']
+        coordinates['eye'] = recording['eye']
+        coordinates['timestamp'] = recording['timestamp']
+        recordingCoords.append(coordinates)
+    return recordingCoords
