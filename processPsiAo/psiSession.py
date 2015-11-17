@@ -103,7 +103,7 @@ def getImagingFileInfo(srcDir, file):
     elif output['ret_y'] < 0:
         output['hemi_y'] = 'I'
     else:
-        output['hemi_x'] = None
+        output['hemi_y'] = None
         
     return output
 
