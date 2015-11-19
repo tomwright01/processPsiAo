@@ -85,7 +85,11 @@ def alignSloFile(srcDir, fileInfo, outDir, moveLocal, writeStabilised, genFrames
 
     logger.info('Performing complete align')
     #vid.complete_align_parallel()
-    vid.complete_align()
+    try:
+        vid.complete_align_parallel()
+    except:
+        logger.warning('Alignment failed')
+
     if writeStabilised:
         logger.info('Writing stabalised movie')
         vid.write_video(os.path.join(workingOutDir,
